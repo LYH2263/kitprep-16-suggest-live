@@ -17,6 +17,8 @@ class Ingredient(Base):
     name: Mapped[str] = mapped_column(String(128))
     unit: Mapped[str] = mapped_column(String(16), default="kg")
     stock_qty: Mapped[float] = mapped_column(Float, default=0.0)
+    # 结存版本号：任何结存写入都必须原子 +1。建议快照记录它，落单时重算比对。
+    version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 class BomLine(Base):
     __tablename__ = "bom_lines"
@@ -45,3 +47,8 @@ class PrepRun(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("kitchen_orders.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     result_json: Mapped[str] = mapped_column(Text, default="{}")
+    # suggested：可落单的建议快照；placed：已落成的备料单（不可改、不可重复落单）。
+    status: Mapped[str] = mapped_column(String(16), default="suggested", nullable=False)
+    # 快照签名：基于当时的订单行/BOM 行/原料结存版本。落单时在锁内重算，不一致即拒绝。
+    signature: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    placed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
