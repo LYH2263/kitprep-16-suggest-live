@@ -50,3 +50,38 @@ def result_to_dict(lines: list[NeedLine]) -> dict:
             "total_shortage_qty": round(sum(l.shortage for l in lines), 3),
         },
     }
+
+# 建议列快照与落单当时重算逐行比对的字段；三者任一不同即两套数
+_SNAPSHOT_FIELDS = ("need_qty", "stock_qty", "shortage")
+
+
+def snapshot_mismatches(frozen: list[dict], current: list[dict]) -> list[dict]:
+    """比对冻结建议列与落单当时重算结果。
+
+    返回所有不一致项（原料缺失/多出，或 need/stock/shortage 数值不同）。
+    返回空列表表示两个快照是同一瞬间的同一套数，可以落单。
+    """
+    frozen_by_id = {int(l["ingredient_id"]): l for l in frozen}
+    current_by_id = {int(l["ingredient_id"]): l for l in current}
+    diffs: list[dict] = []
+    for iid in sorted(frozen_by_id.keys() | current_by_id.keys()):
+        f = frozen_by_id.get(iid)
+        c = current_by_id.get(iid)
+        if f is None:
+            diffs.append({"ingredient_id": iid, "reason": "new_ingredient",
+                          "ingredient_name": c.get("ingredient_name"), "current": c, "frozen": None})
+            continue
+        if c is None:
+            diffs.append({"ingredient_id": iid, "reason": "missing_ingredient",
+                          "ingredient_name": f.get("ingredient_name"), "frozen": f, "current": None})
+            continue
+        changed = {}
+        for field in _SNAPSHOT_FIELDS:
+            fv = round(float(f[field]), 3)
+            cv = round(float(c[field]), 3)
+            if fv != cv:
+                changed[field] = {"frozen": fv, "current": cv}
+        if changed:
+            diffs.append({"ingredient_id": iid, "reason": "qty_changed",
+                          "ingredient_name": f.get("ingredient_name"), "fields": changed})
+    return diffs
